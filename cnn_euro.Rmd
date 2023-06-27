@@ -1,0 +1,211 @@
+---
+title: "CNN_Redes_Neurais"
+author: "José Felipe"
+date: "2023-06-19"
+output: html_document
+---
+
+```{r }
+pacman::p_load(keras, tensorflow, tidyverse, reticulate)
+```
+
+```{r}
+# Definir o diretório
+diretorio <- "/home/jose/UnB/Redes Neurais/trabalho/EuroSAT"
+# Obter a lista de pastas no diretório
+pastas <- list.dirs(path = diretorio, full.names = FALSE, recursive = FALSE)
+
+# Criar listas vazias para armazenar as imagens e as classes
+X <- list()  # Para armazenar as imagens
+Y <- list()  # Para armazenar as classes
+
+# Ler as imagens
+#library(doParallel)
+
+# Definir o número de núcleos/threads a serem utilizados
+# Definir o número de núcleos/threads a serem utilizados
+#num_cores <- detectCores()-1
+#cl <- makeCluster(num_cores)
+#registerDoParallel(cl)
+
+# Carregar o pacote keras
+#use_backend("tensorflow")
+
+# Criar uma lista vazia para armazenar as imagens e suas respectivas pastas
+X <- list()
+Y <- list()
+
+# Loop paralelo para processar as pastas e imagens
+for (i in 1:length(pastas)) {
+  pasta <- pastas[i]
+  caminho_pasta <- file.path(diretorio, pasta)
+  imagens <- list.files(caminho_pasta, full.names = TRUE)
+  
+  for (imagem in imagens) {
+    img <- image_load(imagem, target_size = c(28, 28), grayscale = TRUE)
+    img <- image_to_array(img)
+    img <- img / 255
+    X <- c(X, list(img))
+    Y <- c(Y, list(pasta))
+  }
+}
+X <- array_reshape(X, c(length(X), dim(img)))
+Y <- unlist(Y)
+```
+
+```{r}
+dados_classes <- data.frame(Classes = Y)
+dados_classes <- transform(dados_classes, Classes = factor(Classes))
+
+# Criar o gráfico de barras
+grafico <- ggplot(dados_classes, aes(x = Classes)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Contagem de Imagens por Classe", x = "Classe", y = "Contagem")
+
+# Exibir o gráfico
+print(grafico)
+```
+
+
+```{r}
+#num_classes <- length(unique(Y))
+
+#Y <- factor(Y)
+#Y <- as.numeric(Y) - 1
+
+# Converter para codificação one-hot
+#Y <- to_categorical(Y, num_classes)
+
+
+# Definir a proporção de dados de teste (por exemplo, 80% treinamento, 20% teste)
+proporcao_teste <- 0.2
+library(caret)
+# Gerar o índice de separação dos dados em treinamento e teste
+set.seed(42)  # Para garantir a reprodutibilidade
+indice_separacao <- createDataPartition(Y, p = proporcao_teste, list = FALSE)
+
+
+# Dividir os dados em treinamento e teste com base no índice de separação
+X_treinamento <- X[indice_separacao, , , ]
+Y_treinamento <- Y[indice_separacao]
+X_teste <- X[-indice_separacao,,,]
+Y_teste <- Y[-indice_separacao]
+
+# Exemplo de uso
+print(dim(X_treinamento))  # Dimensões dos dados de treinamento
+print(dim(X_teste))  # Dime
+```
+
+```{r}
+# Definir o número de classes
+# Converter Y em categorias
+num_classes <- 10
+
+# Definir as classes
+classes <- unique(Y_treinamento)
+
+# Mapear as classes para valores numéricos
+Y_numerico <- match(Y_treinamento, classes) - 1
+
+# Converter Y_numerico para o formato one-hot
+Y_treinamento <- to_categorical(Y_numerico, num_classes)
+
+# Ajustar as dimensões dos dados de entrada
+X_treinamento <- array_reshape(X_treinamento, c(dim(X_treinamento)[1], 28, 28, 1))
+
+```
+```{r}
+modelo <- keras_model_sequential()
+modelo %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu", input_shape = c(28, 28, 1)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>%
+  layer_dense(units = 128, activation = "relu") %>%
+  layer_dense(units = num_classes, activation = "softmax")
+
+# Compilar o modelo
+modelo %>% compile(
+  loss = "categorical_crossentropy",
+  optimizer = optimizer_adam(),
+  metrics = c("accuracy")
+)
+```
+
+```{r}
+
+# Treinar o modelo
+epochs <- 30
+batch_size <- 75
+
+
+historico <- modelo %>% fit(
+  X_treinamento, Y_treinamento,
+  epochs = epochs,
+  batch_size = batch_size,
+  validation_split = 0.0002
+)
+
+
+# Exibir a acurácia do modelo no conjunto de treinamento
+acuracia_treinamento <- historico$metrics$accuracy[[epochs]]
+cat("Acurácia no conjunto de treinamento:", acuracia_treinamento, "\n")
+
+```
+
+```{r}
+num_classes <- 10
+
+# Definir as classes
+classes <- unique(Y_teste)
+
+# Mapear as classes para valores numéricos
+Y_numerico <- match(Y_teste, classes) - 1
+
+# Converter Y_numerico para o formato one-hot
+Y_teste <- to_categorical(Y_numerico, num_classes)
+
+# Ajustar as dimensões dos dados de entrada
+X_teste <- array_reshape(X_teste, c(dim(X_teste)[1], 28, 28, 1))
+
+previsoes_teste <- predict(modelo, X_teste)
+
+# Converter as previsões em classes numéricas
+Y_teste_pred <- previsoes_teste %>% k_argmax()
+
+# Exibir as previsões
+Y_teste_pred
+
+# Calcular a acurácia no conjunto de teste
+# Converter as previsões para o tipo de dados inteiro
+Y_teste_pred_int <- as.integer(Y_teste_pred)
+
+# Calcular a acurácia no conjunto de teste
+acuracia_teste <- sum(Y_teste_pred_int == Y_numerico) / length(Y_numerico)
+
+# Exibir a acurácia
+acuracia_teste
+```
+
+```{r}
+### modelo que overfitou
+modelo <- keras_model_sequential()
+
+modelo %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu", input_shape = c(28, 28, 1)) %>%
+  layer_batch_normalization() %>%
+  layer_activation("relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_batch_normalization() %>%
+  layer_activation("relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_batch_normalization() %>%
+  layer_activation("relu") %>%
+  layer_flatten() %>%
+  layer_dense(units = 128, activation = "relu") %>%
+  layer_dense(units = num_classes, activation = "softmax")
+```
+
